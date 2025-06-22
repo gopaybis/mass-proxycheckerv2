@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -20,7 +19,7 @@
 </head>
 <body>
   <h2>🔥 Proxy Checker</h2>
-  <textarea id="input" rows="6" placeholder="Masukkan proxy manual, contoh: IP:PORT\n..."></textarea>
+  <textarea id="input" rows="6" placeholder="Masukkan proxy manual, contoh: IP:PORT\\n..."></textarea>
   <input type="file" id="fileInput" multiple accept=".txt" /><br/>
   <button onclick="loadFromFiles()">Gabungkan Dari File</button>
   <button onclick="startCheck()">Mulai Cek</button>
@@ -55,7 +54,198 @@
   </table>
 
 <script>
-// Full script omitted for brevity — this should contain the final script from your previous working version
+  window.onload = function () {
+  const saved = localStorage.getItem('proxy_results');
+  if (saved) document.getElementById('result').innerHTML = saved;
+
+  const stats = JSON.parse(localStorage.getItem('proxy_stats') || '{}');
+  document.getElementById('total').textContent = stats.total || 0;
+  document.getElementById('active').textContent = stats.active || 0;
+  document.getElementById('inactive').textContent = stats.inactive || 0;
+  document.getElementById('error').textContent = stats.error || 0;
+  document.getElementById('checked').textContent = stats.checked || 0;
+}
+
+function saveResultsToLocalStorage() {
+  localStorage.setItem('proxy_results', document.getElementById('result').innerHTML);
+  localStorage.setItem('proxy_stats', JSON.stringify({
+    total: document.getElementById('total').textContent,
+    active: document.getElementById('active').textContent,
+    inactive: document.getElementById('inactive').textContent,
+    error: document.getElementById('error').textContent,
+    checked: document.getElementById('checked').textContent
+  }));
+}
+
+async function loadFromFiles() {
+  const files = document.getElementById('fileInput').files;
+  if (!files.length) return alert("Pilih minimal 1 file .txt");
+  let allText = document.getElementById('input').value.trim();
+
+  for (const file of files) {
+    const text = await file.text();
+    allText += '\\n' + text.trim();
+  }
+
+  document.getElementById('input').value = allText.trim();
+  alert('Semua isi file berhasil digabung ke dalam textarea!');
+}
+
+async function checkProxy(ip, port, statusCell, countryCell, orgCell, protoCell, delayCell, retries = 20) {
+  let attempts = 0;
+  while (attempts < retries) {
+    try {
+      const res = await fetch(location.href, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip, port })
+      });
+      const data = await res.json();
+
+      const statusText = data.proxyip ? 'Active' : 'Inactive';
+      statusCell.textContent = statusText;
+      statusCell.className = data.proxyip ? 'green' : 'red';
+
+      countryCell.textContent = (data.countryCode || '-') + ' ' + (data.countryFlag || '');
+      orgCell.textContent = data.asOrganization || '-';
+      protoCell.textContent = data.httpProtocol || '-';
+      delayCell.textContent = data.delay || '-';
+
+      return data.proxyip ? 'active' : 'inactive';
+    } catch {
+      attempts++;
+      if (attempts >= retries) {
+        statusCell.textContent = 'Error (max retries reached)';
+        statusCell.className = 'red';
+        return 'error';
+      }
+    }
+  }
+}
+
+async function startCheck() {
+  const inputEl = document.getElementById('input');
+  const result = document.getElementById('result');
+  const stats = { total: 0, active: 0, inactive: 0, error: 0, checked: 0 };
+
+  const lines = Array.from(new Set(
+    inputEl.value.trim().split('\\n').map(x => x.trim()).filter(Boolean)
+  ));
+
+  inputEl.value = lines.join('\\n');
+  result.innerHTML = '';
+  document.getElementById('total').textContent = lines.length;
+  document.getElementById('active').textContent = '0';
+  document.getElementById('inactive').textContent = '0';
+  document.getElementById('error').textContent = '0';
+  document.getElementById('checked').textContent = '0';
+
+  stats.total = lines.length;
+
+  const tasks = lines.map(async (line, i) => {
+    const [ip, port] = line.split(':');
+    if (!ip || !port) return;
+
+    const row = result.insertRow();
+    row.insertCell().textContent = i + 1;
+    row.insertCell().textContent = ip;
+    row.insertCell().textContent = port;
+
+    const statusCell = row.insertCell();
+    const countryCell = row.insertCell();
+    const orgCell = row.insertCell();
+    const protoCell = row.insertCell();
+    const delayCell = row.insertCell();
+
+    statusCell.textContent = '...';
+
+    const status = await checkProxy(ip, port, statusCell, countryCell, orgCell, protoCell, delayCell, 20);
+
+    if (status === 'active') stats.active++;
+    else if (status === 'inactive') stats.inactive++;
+    else if (status === 'error') stats.error++;
+
+    stats.checked = stats.active + stats.inactive + stats.error;
+
+    document.getElementById('active').textContent = stats.active;
+    document.getElementById('inactive').textContent = stats.inactive;
+    document.getElementById('error').textContent = stats.error;
+    document.getElementById('checked').textContent = stats.checked;
+  });
+
+  await Promise.allSettled(tasks);
+  saveResultsToLocalStorage();
+}
+
+function getActiveProxies() {
+  return Array.from(document.querySelectorAll('#result tr'))
+    .filter(r => r.querySelector('.green') && r.querySelector('.green').textContent === 'Active')
+    .map(r => {
+      const cells = r.querySelectorAll('td');
+      const country = (cells[4].textContent || '').split(' ')[0];
+      return [cells[1].textContent, cells[2].textContent, country || '-', cells[5].textContent || '-'].join(',');
+    }).sort((a, b) => a.split(',')[2].localeCompare(b.split(',')[2]));
+}
+
+function getInactiveProxies() {
+  return Array.from(document.querySelectorAll('#result tr'))
+    .filter(r => {
+      const statusCell = r.querySelector('td:nth-child(4)');
+      return statusCell && statusCell.textContent === 'Inactive';
+    })
+    .map(r => {
+      const cells = r.querySelectorAll('td');
+      return \`\${cells[1].textContent}:\${cells[2].textContent}\`;
+    });
+}
+
+function getErrorProxies() {
+  return Array.from(document.querySelectorAll('#result tr'))
+    .filter(r => {
+      const statusCell = r.querySelector('td:nth-child(4)');
+      return statusCell && statusCell.textContent.startsWith('Error');
+    })
+    .map(r => {
+      const cells = r.querySelectorAll('td');
+      return \`\${cells[1].textContent}:\${cells[2].textContent}\`;
+    });
+}
+
+function copyToClipboard() {
+  const proxies = getActiveProxies().join('\\n');
+  navigator.clipboard.writeText(proxies).then(() => alert('Disalin ke clipboard!'));
+}
+
+function copyIpPort() {
+  const rows = Array.from(document.querySelectorAll('#result tr'));
+  const activeProxies = rows
+    .filter(r => r.querySelector('.green') && r.querySelector('.green').textContent === 'Active')
+    .map(r => {
+      const cells = r.querySelectorAll('td');
+      return \`\${cells[1].textContent}:\${cells[2].textContent}\`;
+    });
+
+  navigator.clipboard.writeText(activeProxies.join('\\n')).then(() => alert('IP:Port aktif berhasil disalin!'));
+}
+
+function copyIpPortInactive() {
+  const inactiveProxies = getInactiveProxies().join('\\n');
+  navigator.clipboard.writeText(inactiveProxies).then(() => alert('IP:Port Inactive berhasil disalin!'));
+}
+
+function copyIpPortError() {
+  const errorProxies = getErrorProxies().join('\\n');
+  navigator.clipboard.writeText(errorProxies).then(() => alert('IP:Port Error berhasil disalin!'));
+}
+
+function downloadTxt() {
+  const proxies = getActiveProxies().join('\\n');
+  const blob = new Blob([proxies], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'active_proxies.txt';
+  a.click();
+}
 </script>
 </body>
 </html>
