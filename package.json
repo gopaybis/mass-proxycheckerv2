@@ -1,0 +1,12 @@
+{
+  "name": "mass-proxycheckerv2",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "vercel build",
+    "start": "vercel start"
+  },
+  "dependencies": {
+    "node-fetch": "^2.6.1"
+  }
+}
