@@ -1,3 +1,5 @@
+import fetch from 'node-fetch';
+
 export default async function handler(req, res) {
   if (req.method === "POST") {
     try {
@@ -6,10 +8,11 @@ export default async function handler(req, res) {
       const response = await fetch(url);
       const data = await response.json();
       res.status(200).json(data);
-    } catch {
-      res.status(500).json({ error: true });
+    } catch (error) {
+      res.status(500).json({ error: true, message: 'Failed to check proxy.' });
     }
   } else {
+    // Menangani GET Request untuk mengirimkan file index.html
     res.setHeader("Content-Type", "text/html");
     res.sendFile("index.html", { root: process.cwd() + "/public" });
   }
